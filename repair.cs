@@ -14,8 +14,10 @@ namespace Oxide.Plugins
         private ConfigData configData;
         class ConfigData
         {
-            [JsonProperty(PropertyName = "Cooldown (In seconds)")]
-            public int cooldown = 1800;
+            [JsonProperty(PropertyName = "Cooldown for default (In seconds)")]
+            public int defcooldown = 1800;
+            [JsonProperty(PropertyName = "Cooldown for vip (In seconds)")]
+            public int vipcooldown = 1000;
         }
 
         private bool LoadConfigVariables()
@@ -35,6 +37,8 @@ namespace Oxide.Plugins
         void Init()
         {
             permission.RegisterPermission("repairs.use", this);
+            permission.RegisterPermission("viprepairs.use", this);
+            
             if (!LoadConfigVariables())
             {
                 PrintError("An issue with the config file has been detected Please delete file, or check syntax and fix.");
@@ -55,14 +59,18 @@ namespace Oxide.Plugins
         }
         #endregion Config
         #region lang
+
+        private string Lang(string key, string id = null, params object[] args) => string.Format(lang.GetMessage(key, this, id), args);
+
         protected override void LoadDefaultMessages()
         {
             lang.RegisterMessages(new Dictionary<string, string>
             {
-                ["CommandCooldown"] = $"You must wait <color=red>{0} - {1}</color> to use this command again!",
+                ["CommandCooldown"] = "You must wait <color=red>{0}</color> to use this command again!",
                 ["NotHolding"] = "You must be holding an item!",
                 ["Success"] = "You have repaired your current item!",
-                ["CantRepair"]= "You must use an item that needs repairing!"
+                ["NoPerm"] = "You don't have permission to repair your item!",
+                ["CantRepair"] = "You must use an item that needs repairing!"
             }, this);
         }
         #endregion
@@ -70,41 +78,124 @@ namespace Oxide.Plugins
         private Dictionary<string, DateTime> repairTimes = new Dictionary<string, DateTime>();
         private string CreateMessage(string langName, params object[] args)
         {
-            if (args == null)
-                return lang.GetMessage(langName, this);
-            return string.Format(lang.GetMessage(langName, this), args);
+            if (args != null)
+            {
+                return string.Format(lang.GetMessage(langName, this), args);
+            }
+            else return lang.GetMessage(langName, this);
         }
-        [ChatCommand("repair"), Permission("repair.use")]
+        [ChatCommand("repair")]
         private void repairCMD(BasePlayer player, string Command, string[] args)
         {
-            if (repairTimes.ContainsKey(player.UserIDString))
+            if (permission.UserHasPermission(player.UserIDString, "repairs.use") &! permission.UserHasPermission(player.UserIDString, "viprepairs.use"))
             {
-                var lastCommandUse = repairTimes[player.UserIDString];
-                var seconds = (DateTime.Now - lastCommandUse).Seconds;
-
-                if (seconds < configData.cooldown)
+                if (repairTimes.ContainsKey(player.UserIDString))
                 {
-                    CreateMessage("CommandCooldown", configData.cooldown - seconds);
+                    var lastCommandUse = repairTimes[player.UserIDString];
+                    var seconds = (DateTime.Now - lastCommandUse).Seconds;
+
+                    if (seconds < configData.defcooldown)   
+                    {
+                        var time = configData.defcooldown - seconds;
+                        Console.WriteLine($"{time} remaining");
+                        player.ChatMessage(String.Format(lang.GetMessage("CommandCooldown", this, player.UserIDString), time));
+                        return;
+                    }
+                }
+                HeldEntity heldEntity = player.GetHeldEntity();
+                if (heldEntity == null)
+                {
+                    player.ChatMessage(CreateMessage("NotHolding"));
                     return;
                 }
+                if (heldEntity != null && player.GetActiveItem().condition != heldEntity.MaxHealth())
+                {
+                    float cond = player.GetActiveItem().maxCondition;
+                    repairTimes[player.UserIDString] = DateTime.Now;
+                    player.GetActiveItem().condition = cond;
+                    player.ChatMessage(CreateMessage("Success"));
+                    return;
+                }
+                else
+                {
+                    player.ChatMessage(CreateMessage("CantRepair")); return;
+                }
             }
-            HeldEntity heldEntity = player.GetHeldEntity();
-            if (heldEntity == null)
+            else if (permission.UserHasPermission(player.UserIDString, "viprepairs.use") & !permission.UserHasPermission(player.UserIDString, "repairs.use"))
             {
-                CreateMessage("CommandCooldown");
-                return;
+                if (repairTimes.ContainsKey(player.UserIDString))
+                {
+                    var lastCommandUse = repairTimes[player.UserIDString];
+                    var seconds = (DateTime.Now - lastCommandUse).Seconds;
+
+                    if (seconds < configData.vipcooldown)
+                    {
+
+                        var time = configData.vipcooldown - seconds;
+                        Console.WriteLine($"{time} remaining");
+                        string cooldown = string.Format(lang.GetMessage("CommandCooldown", this, player.UserIDString), time);
+                        player.ChatMessage(String.Format(lang.GetMessage("CommandCooldown", this, player.UserIDString), time));
+                        return;
+                    }
+                }
+                HeldEntity heldEntity = player.GetHeldEntity();
+                if (heldEntity == null)
+                {
+                    player.ChatMessage(CreateMessage("NotHolding"));
+                    return;
+                }
+                if (heldEntity != null && player.GetActiveItem().condition != heldEntity.MaxHealth())
+                {
+                    float cond = player.GetActiveItem().maxCondition;
+                    repairTimes[player.UserIDString] = DateTime.Now;
+                    player.GetActiveItem().condition = cond;
+                    player.ChatMessage(CreateMessage("Success"));
+                    return;
+                }
+                else
+                {
+                    player.ChatMessage(CreateMessage("CantRepair")); return;
+                }
             }
-            if (heldEntity != null && player.GetActiveItem().condition != heldEntity.MaxHealth())
+            else if (permission.UserHasPermission(player.UserIDString, "viprepairs.use") && permission.UserHasPermission(player.UserIDString, "repairs.use"))
             {
-                float cond = player.GetActiveItem().maxCondition;
-                repairTimes[player.UserIDString] = DateTime.Now;
-                player.GetActiveItem().condition = cond;
-                CreateMessage("Success"); 
-                return;
+                if (repairTimes.ContainsKey(player.UserIDString))
+                {
+                    var lastCommandUse = repairTimes[player.UserIDString];
+                    var seconds = (DateTime.Now - lastCommandUse).Seconds;
+
+                    if (seconds < configData.vipcooldown)
+                    {
+                        var time = configData.vipcooldown - seconds;
+                        Console.WriteLine($"{time} remaining");
+                        string cooldown = string.Format(lang.GetMessage("CommandCooldown", this, player.UserIDString), time);
+                        player.ChatMessage(String.Format(lang.GetMessage("CommandCooldown", this, player.UserIDString), time));
+                        return;
+                    }
+                }
+                HeldEntity heldEntity = player.GetHeldEntity();
+                if (heldEntity == null)
+                {
+                    player.ChatMessage(CreateMessage("CommandCooldown"));
+                    return;
+                }
+                if (heldEntity != null && player.GetActiveItem().condition != heldEntity.MaxHealth())
+                {
+                    float cond = player.GetActiveItem().maxCondition;
+                    repairTimes[player.UserIDString] = DateTime.Now;
+                    player.GetActiveItem().condition = cond;
+                    player.ChatMessage(CreateMessage("Success"));
+                    return;
+                }
+                else
+                {
+                    player.ChatMessage(CreateMessage("CantRepair")); return;
+                }
             }
             else
             {
-                CreateMessage("CantRepair");
+                player.ChatMessage(CreateMessage("NoPerm"));
+                return;
             }
         }
     }
