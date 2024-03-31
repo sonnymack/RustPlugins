@@ -1,10 +1,10 @@
-﻿using Oxide.Core;
+using Oxide.Core;
 using Oxide.Core.Libraries.Covalence;
 using System.Collections.Generic;
 
 namespace Oxide.Plugins
 {
-    [Info("ClearInventory", "YourName", "1.0.0")]
+    [Info("ClearInventory", "sonnymack", "1.0.0")]
     [Description("Allows players to clear their inventory.")]
     class ClearInventory : RustPlugin
     {
